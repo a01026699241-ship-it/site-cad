@@ -1,0 +1,61 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # GitHub 우분투 러너에는 Android SDK 가 미리 설치되어 있음
+      - name: Install npm deps
+        run: npm install
+
+      - name: Copy web assets -> www/
+        run: npm run copy
+
+      - name: Add Android platform
+        run: npx cap add android || echo "android/ already present"
+
+      - name: Capacitor sync
+        run: npx cap sync android
+
+      - name: Build debug APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sitecad-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      # main 브랜치 push 시 Release 에도 첨부 (태그 없이 'apk-latest' 로 갱신)
+      - name: Publish to rolling release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-latest
+          name: 최신 APK (자동 빌드)
+          files: android/app/build/outputs/apk/debug/app-debug.apk
+          body: |
+            main 브랜치 최신 커밋으로 자동 빌드된 디버그 APK 입니다.
+            휴대폰에 그대로 설치(사이드로드)해 테스트하세요.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

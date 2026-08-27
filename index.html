@@ -1,0 +1,1260 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0f172a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="현장도면">
+<title>현장도면 뷰어</title>
+<link id="appIcon" rel="apple-touch-icon" href="icon.svg">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<link rel="manifest" href="manifest.webmanifest">
+<style>
+  :root{
+    --bg:#0f172a; --panel:#111c33; --panel2:#16233f; --line:#26385c;
+    --fg:#e6eefc; --muted:#93a4c4; --accent:#38bdf8; --accent2:#22c55e;
+    --danger:#f87171; --warn:#fbbf24;
+    --canvas-bg:#ffffff; --canvas-fg:#111418;
+  }
+  html[data-cvtheme="dark"]{ --canvas-bg:#0b1220; --canvas-fg:#e8edf6; }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ margin:0; height:100%; overflow:hidden; background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans KR","Malgun Gothic",sans-serif; }
+  #app{ position:fixed; inset:0; display:flex; flex-direction:column; }
+
+  header{ display:flex; align-items:center; gap:8px; padding:calc(env(safe-area-inset-top) + 8px) 10px 8px;
+    background:var(--panel); border-bottom:1px solid var(--line); flex:none; }
+  header .name{ flex:1; min-width:0; font-size:13px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .btn{ appearance:none; border:1px solid var(--line); background:var(--panel2); color:var(--fg);
+    font-size:13px; padding:9px 12px; border-radius:10px; min-height:40px; display:inline-flex; align-items:center; gap:6px; }
+  .btn:active{ background:#1e2f52; }
+  .btn.primary{ background:var(--accent); color:#04283a; border-color:transparent; font-weight:700; }
+  .btn:disabled{ opacity:.4; pointer-events:none; }
+  .btn.on{ background:var(--accent); color:#04283a; border-color:transparent; font-weight:700; }
+  .btn.sm{ padding:7px 9px; min-height:36px; font-size:12px; }
+
+  #stage{ position:relative; flex:1; overflow:hidden; background:var(--canvas-bg); }
+  canvas{ position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:none; }
+
+  #tools{ position:absolute; left:8px; right:8px; bottom:calc(env(safe-area-inset-bottom) + 8px);
+    display:flex; flex-wrap:wrap; gap:6px; justify-content:center; pointer-events:none; }
+  #tools .btn{ pointer-events:auto; background:rgba(17,28,51,.92); backdrop-filter:blur(6px); }
+  #tools .btn.on{ background:var(--accent); }
+
+  #hud{ position:absolute; left:8px; top:8px; max-width:70%; font-size:12px; line-height:1.5;
+    background:rgba(17,28,51,.9); border:1px solid var(--line); border-radius:10px; padding:8px 10px;
+    color:var(--fg); white-space:pre-wrap; display:none; }
+  #hud.show{ display:block; }
+  #hud b{ color:var(--accent); }
+
+  .sheet{ position:absolute; inset:0; background:rgba(4,10,24,.55); display:none; align-items:flex-end; z-index:20; }
+  .sheet.show{ display:flex; }
+  .sheet .card{ width:100%; max-height:80%; overflow:auto; background:var(--panel); border-top:1px solid var(--line);
+    border-radius:16px 16px 0 0; padding:14px 14px calc(env(safe-area-inset-bottom) + 14px); }
+  .sheet h3{ margin:0 0 10px; font-size:15px; display:flex; justify-content:space-between; align-items:center; }
+  .row{ display:flex; align-items:center; gap:10px; padding:9px 4px; border-bottom:1px solid var(--line); font-size:14px; }
+  .row:last-child{ border-bottom:0; }
+  .row .sw{ margin-left:auto; }
+  .swatch{ width:14px; height:14px; border-radius:4px; border:1px solid #0006; flex:none; }
+  input[type=checkbox]{ width:22px; height:22px; }
+  input[type=number],input[type=text]{ background:var(--panel2); border:1px solid var(--line); color:var(--fg);
+    border-radius:8px; padding:8px; font-size:14px; width:90px; }
+  .hint{ font-size:12px; color:var(--muted); margin:8px 4px; line-height:1.6; }
+  .marklist .row{ align-items:flex-start; }
+  .marklist .mtxt{ flex:1; }
+  .marklist .mts{ font-size:11px; color:var(--muted); }
+
+  #drop{ position:absolute; inset:0; display:none; align-items:center; justify-content:center;
+    background:rgba(56,189,248,.12); border:3px dashed var(--accent); font-size:16px; color:var(--accent); z-index:30; }
+  #welcome{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:14px; text-align:center; padding:24px; color:var(--canvas-fg); }
+  html[data-cvtheme="dark"] #welcome{ color:var(--fg); }
+  #welcome .big{ font-size:17px; font-weight:700; }
+  #welcome .sub{ font-size:13px; color:#64748b; max-width:320px; line-height:1.7; }
+  html[data-cvtheme="dark"] #welcome .sub{ color:var(--muted); }
+  .a2hs{ position:absolute; left:8px; right:8px; top:calc(env(safe-area-inset-top) + 4px); z-index:15;
+    background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:10px 12px; font-size:12px;
+    display:none; align-items:center; gap:8px; }
+  .a2hs.show{ display:flex; }
+
+  #cmpLegend{ position:absolute; left:8px; right:8px; top:calc(env(safe-area-inset-top) + 4px); z-index:16;
+    display:none; flex-wrap:wrap; gap:6px; justify-content:center; }
+  #cmpLegend.show{ display:flex; }
+  .chip{ appearance:none; border:1px solid var(--line); background:rgba(17,28,51,.94); color:var(--fg);
+    font-size:12px; padding:7px 10px; border-radius:999px; min-height:34px; backdrop-filter:blur(6px); }
+  .chip.off{ opacity:.4; text-decoration:line-through; }
+  .chip.cA{ border-color:#16a34a; color:#4ade80; }
+  .chip.cR{ border-color:#ef4444; color:#fca5a5; }
+  .chip.cS{ border-color:#64748b; color:#cbd5e1; }
+  body.cmpmode #hud{ top:52px; }
+  body.cmpmode #tLayers{ opacity:.4; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <button class="btn primary" id="openBtn">📂 도면 열기</button>
+    <button class="btn sm" id="sampleBtn">예제</button>
+    <span class="name" id="fileName">파일이 열리지 않았습니다</span>
+    <button class="btn sm" id="menuBtn">⋯</button>
+  </header>
+
+  <div id="stage">
+    <canvas id="cv"></canvas>
+
+    <div id="welcome">
+      <div class="big">현장 DWG / DXF 도면 뷰어</div>
+      <div class="sub">
+        상단 <b>도면 열기</b>로 파일앱 · 카카오톡 · 메일에 받은 도면을 선택하세요.<br>
+        DXF 파일은 바로 열립니다. DWG는 안내에 따라 변환 후 열어주세요.<br>
+        <b>예제</b> 버튼으로 지금 바로 조작을 테스트할 수 있습니다.
+      </div>
+      <button class="btn primary" id="openBtn2">📂 도면 열기</button>
+    </div>
+
+    <div id="hud"></div>
+    <div id="cmpLegend"></div>
+
+    <div class="a2hs" id="a2hs">
+      <span>홈 화면에 추가하면 앱처럼 실행됩니다.</span>
+      <button class="btn sm" id="a2hsInstall" style="margin-left:auto">설치</button>
+      <button class="btn sm" id="a2hsClose">✕</button>
+    </div>
+
+    <div id="tools">
+      <button class="btn sm" data-tool="pan" id="tPan">✋ 이동</button>
+      <button class="btn sm" data-tool="dist" id="tDist">📏 거리</button>
+      <button class="btn sm" data-tool="area" id="tArea">▱ 면적</button>
+      <button class="btn sm" data-tool="mark" id="tMark">📍 마킹</button>
+      <button class="btn sm" id="tFit">⤢ 전체</button>
+      <button class="btn sm" id="tLayers">☰ 레이어</button>
+      <button class="btn sm" id="tCompare">⇄ 비교</button>
+      <button class="btn sm" id="tClear">↺ 측정취소</button>
+    </div>
+
+    <div id="drop">도면 파일을 놓으세요</div>
+  </div>
+</div>
+
+<!-- 레이어 시트 -->
+<div class="sheet" id="layerSheet">
+  <div class="card">
+    <h3>레이어 <button class="btn sm" data-close>닫기</button></h3>
+    <div class="row">
+      <b>전체 표시/숨김</b>
+      <span class="sw"><input type="checkbox" id="allLayers" checked></span>
+    </div>
+    <div id="layerList"></div>
+  </div>
+</div>
+
+<!-- 메뉴 시트 -->
+<div class="sheet" id="menuSheet">
+  <div class="card">
+    <h3>메뉴 / 설정 <button class="btn sm" data-close>닫기</button></h3>
+    <div class="row">
+      <span>도면 단위 1 = <input type="number" id="unitFactor" step="0.0001" value="0.001"> m</span>
+      <span class="sw"><button class="btn sm" id="applyUnit">적용</button></span>
+    </div>
+    <div class="hint" id="unitHint">거리·면적은 이 값으로 실측(m)으로 환산됩니다. mm 도면=0.001, m 도면=1.</div>
+    <div class="row">
+      <span>도면 배경 어둡게</span>
+      <span class="sw"><input type="checkbox" id="cvThemeChk"></span>
+    </div>
+    <div class="row">
+      <span>마킹 목록 / 메모</span>
+      <span class="sw"><button class="btn sm" id="showMarks">열기</button></span>
+    </div>
+    <div class="row">
+      <span>화면 캡처 저장 (PNG)</span>
+      <span class="sw"><button class="btn sm" id="snap">저장</button></span>
+    </div>
+    <div class="row">
+      <span>마킹 내보내기 (JSON)</span>
+      <span class="sw"><button class="btn sm" id="exportMarks">내보내기</button></span>
+    </div>
+    <div class="hint" id="statInfo"></div>
+  </div>
+</div>
+
+<!-- 마킹 목록 시트 -->
+<div class="sheet" id="markSheet">
+  <div class="card">
+    <h3>마킹 / 메모 <button class="btn sm" data-close>닫기</button></h3>
+    <div class="marklist" id="markList"></div>
+    <div class="hint">도면에서 마킹 핀을 탭하면 메모를 수정·삭제할 수 있습니다.</div>
+    <button class="btn" id="clearMarks" style="margin-top:10px;color:var(--danger)">이 도면의 마킹 전체 삭제</button>
+  </div>
+</div>
+
+<!-- DWG 안내 -->
+<div class="sheet" id="dwgSheet">
+  <div class="card">
+    <h3>DWG 파일 안내 <button class="btn sm" data-close>닫기</button></h3>
+    <div class="hint" style="font-size:13px;line-height:1.9">
+      선택하신 파일은 <b>DWG</b> 형식입니다.<br>
+      DWG는 폐쇄 포맷이라 브라우저에서 직접 열려면 유료 CAD 엔진(ODA 등)이 필요합니다.<br><br>
+      <b>해결 방법 (1분)</b><br>
+      1. PC에서 무료 프로그램 <b>ODA File Converter</b> 설치<br>
+      &nbsp;&nbsp;&nbsp;(opendesign.com → Guest / ODA File Converter)<br>
+      2. 입력=DWG 폴더, 출력 형식 <b>DXF</b> 선택 → 변환<br>
+      3. 변환된 <b>.dxf</b> 파일을 휴대폰으로 보내 이 앱에서 열기<br><br>
+      AutoCAD가 있다면 <b>다른 이름으로 저장 → DXF</b> 로도 됩니다.
+    </div>
+  </div>
+</div>
+
+<!-- 도면 비교 -->
+<div class="sheet" id="cmpSheet">
+  <div class="card">
+    <h3>도면 비교 (개정 전 / 후 중첩) <button class="btn sm" data-close>닫기</button></h3>
+    <div class="row">
+      <span>A · 기존 도면<br><span class="mts" id="cmpAName" style="color:var(--muted)">(현재 열린 도면)</span></span>
+      <span class="sw"><button class="btn sm" id="cmpPickA">파일 선택</button></span>
+    </div>
+    <div class="row">
+      <span>B · 개정 도면<br><span class="mts" id="cmpBName" style="color:var(--muted)">(선택 안 됨)</span></span>
+      <span class="sw"><button class="btn sm" id="cmpPickB">파일 선택</button></span>
+    </div>
+    <div class="row">
+      <span>스냅 반올림 <input type="number" id="cmpTol" step="0.5" value="1"> 단위</span>
+    </div>
+    <div class="hint">두 도면의 같은 위치·같은 형상을 "동일"로 판정하는 허용오차입니다. mm 도면이면 1~5 권장.</div>
+    <div class="row">
+      <span>B 위치 보정 X <input type="number" id="cmpDx" step="1" value="0"></span>
+    </div>
+    <div class="row">
+      <span>B 위치 보정 Y <input type="number" id="cmpDy" step="1" value="0"></span>
+    </div>
+    <div class="hint">두 도면 기준점이 어긋나 있을 때만 사용. 보통 0.</div>
+    <button class="btn primary" id="cmpRun" style="width:100%;margin-top:10px">비교 실행</button>
+    <div class="hint">
+      실행 후 상단 칩으로 <b style="color:#4ade80">추가</b> / <b style="color:#fca5a5">삭제</b> / 동일 표시를 켜고 끕니다.<br>
+      판정은 형상(선·원·문자 위치) 기준이며, 레이어 이동만 있는 경우는 "동일"로 봅니다.
+    </div>
+  </div>
+</div>
+
+<input type="file" id="fileInput" accept=".dxf,.dwg,application/dxf,image/vnd.dwg" hidden>
+<input type="file" id="cmpInputA" accept=".dxf,application/dxf" hidden>
+<input type="file" id="cmpInputB" accept=".dxf,application/dxf" hidden>
+
+<script>
+(function(){
+"use strict";
+const $ = s => document.querySelector(s);
+
+const cv = $("#cv"), ctx = cv.getContext("2d");
+let DPR = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+
+// ---------- 상태 ----------
+let model = null;                 // {entities, layers, header}
+let view = { cx:0, cy:0, scale:1 };
+let tool = "pan";
+let layerVis = {};                // name -> bool
+let measure = { pts:[], mode:null };
+let marks = [];
+let fileKey = "none";
+let unitFactor = 0.001;
+let interacting = false;
+
+// 도면 비교 상태
+let cmpA = null;                  // { name, model }  기준(기존) 도면
+let cmpB = null;                  // { name, model }  개정 도면
+let cmp = null;                   // 활성 비교: { tol, dx, dy, show:{same,removed,added}, result:{same,removed,added} }
+
+// ---------- DXF 파서 ----------
+function tokenize(text){
+  const lines = text.split(/\r\n|\r|\n/);
+  const pairs = [];
+  for(let i=0; i+1 < lines.length; i+=2){
+    const code = parseInt(lines[i].trim(), 10);
+    if(Number.isNaN(code)){ i-=1; continue; }
+    pairs.push([code, lines[i+1]]);
+  }
+  return pairs;
+}
+function grab(pairs, i){ // i = index after a "0/TYPE" line
+  const arr = [];
+  while(i < pairs.length && pairs[i][0] !== 0){ arr.push(pairs[i]); i++; }
+  return [arr, i];
+}
+const gv  = (a,c) => { const p = a.find(x=>x[0]===c); return p ? p[1] : undefined; };
+const gn  = (a,c,d) => { const v = gv(a,c); return v===undefined ? d : parseFloat(v); };
+
+function d2r(d){ return d*Math.PI/180; }
+
+function sampleArc(cx,cy,r,a0,a1){
+  // DXF 호는 반시계(CCW), 각도 degree
+  let s = d2r(a0), e = d2r(a1);
+  while(e <= s) e += Math.PI*2;
+  const span = e - s;
+  const n = Math.max(6, Math.ceil(span/ (Math.PI/36)));
+  const pts = [];
+  for(let k=0;k<=n;k++){ const t = s + span*k/n; pts.push([cx + r*Math.cos(t), cy + r*Math.sin(t)]); }
+  return pts;
+}
+function sampleEllipse(cx,cy,mx,my,ratio,p0,p1){
+  let s=p0, e=p1; if(e<=s) e += Math.PI*2;
+  const span=e-s, n=Math.max(8, Math.ceil(span/(Math.PI/36)));
+  const pts=[];
+  for(let k=0;k<=n;k++){
+    const t=s+span*k/n, ct=Math.cos(t), st=Math.sin(t);
+    pts.push([ cx + mx*ct - my*ratio*st, cy + my*ct + mx*ratio*st ]);
+  }
+  return pts;
+}
+function bulgeArc(p0,p1,b){
+  if(!b) return [p0,p1];
+  const [x0,y0]=p0,[x1,y1]=p1;
+  const dx=x1-x0, dy=y1-y0, chord=Math.hypot(dx,dy);
+  if(chord<1e-9) return [p0,p1];
+  const sagitta = b*chord/2;
+  const r = (chord*chord/4 + sagitta*sagitta)/(2*Math.abs(sagitta));
+  const mx=(x0+x1)/2, my=(y0+y1)/2;
+  const nx=-dy/chord, ny=dx/chord;
+  const h = r - Math.abs(sagitta);
+  const sign = b>0 ? 1 : -1;
+  const ccx = mx + nx*h*sign, ccy = my + ny*h*sign;
+  let a0=Math.atan2(y0-ccy,x0-ccx), a1=Math.atan2(y1-ccy,x1-ccx);
+  if(b>0){ while(a1<=a0) a1+=Math.PI*2; } else { while(a1>=a0) a1-=Math.PI*2; }
+  const n=Math.max(4, Math.ceil(Math.abs(a1-a0)/(Math.PI/36)));
+  const pts=[];
+  for(let k=0;k<=n;k++){ const t=a0+(a1-a0)*k/n; pts.push([ccx+r*Math.cos(t), ccy+r*Math.sin(t)]); }
+  return pts;
+}
+
+function cleanMText(t){
+  if(t===undefined) return "";
+  return String(t)
+    .replace(/\\P/g,"\n").replace(/\\~/g," ")
+    .replace(/\\[A-Za-z][^;\\]*;/g,"")
+    .replace(/[{}]/g,"")
+    .replace(/\\(.)/g,"$1");
+}
+
+function parseHeader(pairs, i){
+  const h = { insunits:0, extmin:null, extmax:null };
+  while(i < pairs.length){
+    const [c,v] = pairs[i];
+    if(c===0 && v==="ENDSEC") return [h, i+1];
+    if(c===9){
+      const name = v.trim();
+      if(name==="$INSUNITS" && pairs[i+1]) h.insunits = parseInt(pairs[i+1][1],10)||0;
+      if(name==="$EXTMIN" && pairs[i+1] && pairs[i+2]) h.extmin=[parseFloat(pairs[i+1][1]),parseFloat(pairs[i+2][1])];
+      if(name==="$EXTMAX" && pairs[i+1] && pairs[i+2]) h.extmax=[parseFloat(pairs[i+1][1]),parseFloat(pairs[i+2][1])];
+    }
+    i++;
+  }
+  return [h, i];
+}
+
+function parseLayers(pairs, i){
+  const layers = {};
+  while(i < pairs.length){
+    const [c,v] = pairs[i];
+    if(c===0 && v==="ENDSEC") return [layers, i+1];
+    if(c===0 && v==="LAYER"){
+      let [arr, ni] = grab(pairs, i+1);
+      const nm = gv(arr,2);
+      if(nm!==undefined){
+        const col = Math.abs(gn(arr,62,7)|0);
+        layers[nm] = { color: col, on: gn(arr,62,7) >= 0 };
+      }
+      i = ni; continue;
+    }
+    i++;
+  }
+  return [layers, i];
+}
+
+function parseTables(pairs, i){
+  let layers = {};
+  while(i < pairs.length){
+    const [c,v] = pairs[i];
+    if(c===0 && v==="ENDSEC") return [layers, i+1];
+    if(c===2 && v.trim()==="LAYER"){ const r = parseLayers(pairs, i+1); layers = r[0]; i = r[1]; continue; }
+    i++;
+  }
+  return [layers, i];
+}
+
+function entityToPrims(type, arr, blocks, depth){
+  const layer = (gv(arr,8) || "0");
+  const color = gn(arr,62, undefined); // undefined => BYLAYER
+  const base = { layer, color };
+  const out = [];
+  const push = o => out.push(Object.assign({}, base, o));
+
+  if(type==="LINE"){
+    push({ k:"poly", pts:[[gn(arr,10,0),gn(arr,20,0)],[gn(arr,11,0),gn(arr,21,0)]] });
+  } else if(type==="CIRCLE"){
+    push({ k:"circle", cx:gn(arr,10,0), cy:gn(arr,20,0), r:gn(arr,40,0) });
+  } else if(type==="ARC"){
+    push({ k:"poly", pts: sampleArc(gn(arr,10,0),gn(arr,20,0),gn(arr,40,0),gn(arr,50,0),gn(arr,51,0)) });
+  } else if(type==="ELLIPSE"){
+    push({ k:"poly", pts: sampleEllipse(gn(arr,10,0),gn(arr,20,0),gn(arr,11,0),gn(arr,21,0),gn(arr,40,1),gn(arr,41,0),gn(arr,42,Math.PI*2)) });
+  } else if(type==="POINT"){
+    push({ k:"point", x:gn(arr,10,0), y:gn(arr,20,0) });
+  } else if(type==="LWPOLYLINE"){
+    const closed = (gn(arr,70,0)|0) & 1;
+    const raw = [];
+    for(let k=0;k<arr.length;k++){
+      if(arr[k][0]===10){
+        const x = parseFloat(arr[k][1]);
+        let y = 0, bulge = 0;
+        for(let j=k+1;j<arr.length && arr[j][0]!==10;j++){
+          if(arr[j][0]===20) y = parseFloat(arr[j][1]);
+          if(arr[j][0]===42) bulge = parseFloat(arr[j][1]);
+        }
+        raw.push([x,y,bulge]);
+      }
+    }
+    let pts = [];
+    for(let k=0;k<raw.length;k++){
+      const a = raw[k];
+      const b = raw[k+1] || (closed ? raw[0] : null);
+      if(!b){ pts.push([a[0],a[1]]); break; }
+      const seg = bulgeArc([a[0],a[1]],[b[0],b[1]], a[2]);
+      if(k>0) seg.shift();
+      pts = pts.concat(seg);
+    }
+    push({ k:"poly", pts, closed:!!closed });
+  } else if(type==="SPLINE"){
+    const fit=[], ctl=[];
+    for(let k=0;k<arr.length;k++){
+      if(arr[k][0]===11 && arr[k+1] && arr[k+1][0]===21) fit.push([parseFloat(arr[k][1]),parseFloat(arr[k+1][1])]);
+      if(arr[k][0]===10 && arr[k+1] && arr[k+1][0]===20) ctl.push([parseFloat(arr[k][1]),parseFloat(arr[k+1][1])]);
+    }
+    const pts = fit.length>1 ? fit : ctl;
+    if(pts.length>1) push({ k:"poly", pts });
+  } else if(type==="3DFACE" || type==="SOLID"){
+    const p=[];
+    [[10,20],[11,21],[12,22],[13,23]].forEach(([cx,cy])=>{
+      const x=gv(arr,cx); if(x!==undefined) p.push([parseFloat(x), gn(arr,cy,0)]);
+    });
+    if(p.length>=2) push({ k:"poly", pts:p, closed:true });
+  } else if(type==="TEXT"){
+    const t = gv(arr,1) || "";
+    if(t.trim()!=="") push({ k:"text", x:gn(arr,11,gn(arr,10,0))||gn(arr,10,0), y:gn(arr,21,gn(arr,20,0))||gn(arr,20,0),
+      h:gn(arr,40,2.5), rot:gn(arr,50,0), text:t });
+  } else if(type==="MTEXT"){
+    let t = gv(arr,1) || "";
+    arr.forEach(p=>{ if(p[0]===3) t = p[1] + t; });
+    t = cleanMText(t);
+    if(t.trim()!=="") push({ k:"text", x:gn(arr,10,0), y:gn(arr,20,0), h:gn(arr,40,2.5), rot:gn(arr,50,0), text:t, mtext:true });
+  } else if(type==="LEADER"){
+    const p=[];
+    for(let k=0;k<arr.length;k++) if(arr[k][0]===10 && arr[k+1] && arr[k+1][0]===20) p.push([parseFloat(arr[k][1]),parseFloat(arr[k+1][1])]);
+    if(p.length>1) push({ k:"poly", pts:p });
+  } else if(type==="INSERT"){
+    const name = gv(arr,2);
+    const blk = blocks && blocks[name];
+    if(blk && depth < 4){
+      const ix=gn(arr,10,0), iy=gn(arr,20,0), sx=gn(arr,41,1), sy=gn(arr,42,1), rot=d2r(gn(arr,50,0));
+      const cos=Math.cos(rot), sin=Math.sin(rot);
+      const tf = ([x,y]) => {
+        const bx=(x-blk.bx)*sx, by=(y-blk.by)*sy;
+        return [ ix + bx*cos - by*sin, iy + bx*sin + by*cos ];
+      };
+      blk.prims.forEach(pr=>{
+        const c = Object.assign({}, pr);
+        c.layer = (pr.layer==="0") ? layer : pr.layer;
+        if(pr.color===undefined && color!==undefined) c.color = color;
+        if(pr.k==="poly") c.pts = pr.pts.map(tf);
+        else if(pr.k==="circle"){ const q=tf([pr.cx,pr.cy]); c.cx=q[0]; c.cy=q[1]; c.r=pr.r*Math.abs(sx); }
+        else if(pr.k==="point"){ const q=tf([pr.x,pr.y]); c.x=q[0]; c.y=q[1]; }
+        else if(pr.k==="text"){ const q=tf([pr.x,pr.y]); c.x=q[0]; c.y=q[1]; c.h=pr.h*Math.abs(sy); }
+        out.push(c);
+      });
+    }
+  }
+  return out;
+}
+
+function parseEntitySection(pairs, i, blocks, sink){
+  while(i < pairs.length){
+    const [c,v] = pairs[i];
+    if(c===0 && v==="ENDSEC") return i+1;
+    if(c===0 && v==="ENDBLK") return i; // for blocks
+    if(c===0){
+      const type = v;
+      if(type==="POLYLINE"){
+        let [arr, ni] = grab(pairs, i+1);
+        const closed = (gn(arr,70,0)|0) & 1;
+        const layer = gv(arr,8) || "0";
+        const color = gn(arr,62, undefined);
+        const pts = [];
+        let j = ni;
+        while(j < pairs.length && !(pairs[j][0]===0 && pairs[j][1]==="SEQEND")){
+          if(pairs[j][0]===0 && pairs[j][1]==="VERTEX"){
+            let [varr, vj] = grab(pairs, j+1);
+            pts.push([gn(varr,10,0), gn(varr,20,0)]);
+            j = vj; continue;
+          }
+          if(pairs[j][0]===0 && pairs[j][1]==="ENDSEC"){ break; }
+          j++;
+        }
+        if(pts.length>1) sink.push({ k:"poly", pts, closed:!!closed, layer, color });
+        // skip past SEQEND (stop at ENDSEC to avoid over-consuming malformed files)
+        while(j < pairs.length && !(pairs[j][0]===0 && (pairs[j][1]==="SEQEND" || pairs[j][1]==="ENDSEC"))) j++;
+        if(pairs[j] && pairs[j][1]==="ENDSEC"){ i = j; continue; }
+        i = j + 1; continue;
+      }
+      let [arr, ni] = grab(pairs, i+1);
+      const prims = entityToPrims(type, arr, blocks, 0);
+      for(const p of prims) sink.push(p);
+      i = ni; continue;
+    }
+    i++;
+  }
+  return i;
+}
+
+function parseBlocks(pairs, i){
+  const blocks = {};
+  while(i < pairs.length){
+    const [c,v] = pairs[i];
+    if(c===0 && v==="ENDSEC") return [blocks, i+1];
+    if(c===0 && v==="BLOCK"){
+      let [arr, ni] = grab(pairs, i+1);
+      const name = gv(arr,2);
+      const bx = gn(arr,10,0), by = gn(arr,20,0);
+      const prims = [];
+      const after = parseEntitySection(pairs, ni, {}, prims); // no nested-insert expansion inside blocks
+      if(name) blocks[name] = { bx, by, prims };
+      // move to ENDBLK then past it
+      let j = after;
+      while(j < pairs.length && !(pairs[j][0]===0 && pairs[j][1]==="ENDBLK")) j++;
+      i = j + 1; continue;
+    }
+    i++;
+  }
+  return [blocks, i];
+}
+
+function parseDXF(text){
+  const pairs = tokenize(text);
+  let header = { insunits:0 }, layers = {}, blocks = {};
+  const entities = [];
+  let i = 0;
+  while(i < pairs.length){
+    const [c,v] = pairs[i];
+    if(c===0 && v==="SECTION"){
+      const name = pairs[i+1] && pairs[i+1][0]===2 ? pairs[i+1][1].trim() : "";
+      if(name==="HEADER"){ const r=parseHeader(pairs, i+2); header=r[0]; i=r[1]; continue; }
+      if(name==="TABLES"){ const r=parseTables(pairs, i+2); layers=r[0]; i=r[1]; continue; }
+      if(name==="BLOCKS"){ const r=parseBlocks(pairs, i+2); blocks=r[0]; i=r[1]; continue; }
+      if(name==="ENTITIES"){ i = parseEntitySection(pairs, i+2, blocks, entities); continue; }
+    }
+    i++;
+  }
+  // 레이어 목록 보강: 엔티티에 등장한 레이어도 포함
+  for(const e of entities){ if(!(e.layer in layers)) layers[e.layer] = { color:7, on:true }; }
+  if(!("0" in layers)) layers["0"] = { color:7, on:true };
+  return { header, layers, entities };
+}
+
+// ---------- 색상 (AutoCAD ACI 근사) ----------
+const ACI = {1:"#ff0000",2:"#ffff00",3:"#00ff00",4:"#00ffff",5:"#0000ff",6:"#ff00ff",8:"#808080",9:"#c0c0c0"};
+function aciColor(idx){
+  const dark = document.documentElement.getAttribute("data-cvtheme")==="dark";
+  if(idx===undefined || idx===256 || idx===0 || idx===7) return dark ? "#e8edf6" : "#111418";
+  if(ACI[idx]) {
+    let hex = ACI[idx];
+    if(!dark){
+      // 밝은 배경에서 너무 밝은 색은 어둡게
+      const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
+      const lum=(0.299*r+0.587*g+0.114*b)/255;
+      if(lum>0.72){ hex="#"+[r,g,b].map(x=>("0"+Math.round(x*0.55).toString(16)).slice(-2)).join(""); }
+    }
+    return hex;
+  }
+  const hue = (idx*47) % 360;
+  return `hsl(${hue} 65% ${dark?60:38}%)`;
+}
+
+// ---------- 좌표 변환 ----------
+let W=0, H=0;
+function resize(){
+  DPR = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+  W = cv.clientWidth; H = cv.clientHeight;
+  cv.width = Math.round(W*DPR); cv.height = Math.round(H*DPR);
+  draw();
+}
+function w2s(x,y){ return [ (x - view.cx)*view.scale + W/2, H/2 - (y - view.cy)*view.scale ]; }
+function s2w(sx,sy){ return [ view.cx + (sx - W/2)/view.scale, view.cy - (sy - H/2)/view.scale ]; }
+
+function bbox(){
+  let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
+  const acc=(x,y)=>{ if(x<minx)minx=x; if(y<miny)miny=y; if(x>maxx)maxx=x; if(y>maxy)maxy=y; };
+  const eat=e=>{
+    if(e.k==="poly") for(const p of e.pts) acc(p[0],p[1]);
+    else if(e.k==="circle"){ acc(e.cx-e.r,e.cy-e.r); acc(e.cx+e.r,e.cy+e.r); }
+    else if(e.k==="point") acc(e.x,e.y);
+    else if(e.k==="text") acc(e.x,e.y);
+  };
+  if(cmp){
+    for(const e of cmp.result.same) eat(e);
+    for(const e of cmp.result.removed) eat(e);
+    for(const e of cmp.result.added) eat(e);
+  } else {
+    if(!model) return null;
+    for(const e of model.entities){ if(layerVis[e.layer]) eat(e); }
+  }
+  if(minx===Infinity) return null;
+  return {minx,miny,maxx,maxy};
+}
+function fit(){
+  const b = bbox();
+  if(!b){ view={cx:0,cy:0,scale:1}; draw(); return; }
+  const bw = Math.max(1e-6, b.maxx-b.minx), bh = Math.max(1e-6, b.maxy-b.miny);
+  view.scale = Math.min(W/bw, H/bh) * 0.9;
+  view.cx = (b.minx+b.maxx)/2; view.cy = (b.miny+b.maxy)/2;
+  draw();
+}
+
+// ---------- 렌더 ----------
+function drawEnt(e, col, fast, lw){
+  if(e.k==="poly"){
+    if(e.pts.length<2) return;
+    let vis=false;
+    ctx.beginPath();
+    for(let j=0;j<e.pts.length;j++){
+      const s = w2s(e.pts[j][0], e.pts[j][1]);
+      if(s[0]>-50 && s[0]<W+50 && s[1]>-50 && s[1]<H+50) vis=true;
+      j===0 ? ctx.moveTo(s[0],s[1]) : ctx.lineTo(s[0],s[1]);
+    }
+    if(!vis) return;
+    if(e.closed) ctx.closePath();
+    ctx.lineWidth = lw||1; ctx.strokeStyle = col; ctx.stroke();
+  } else if(e.k==="circle"){
+    const s = w2s(e.cx, e.cy); const r = e.r*view.scale;
+    if(r<0.6) return;
+    if(s[0]+r<0||s[0]-r>W||s[1]+r<0||s[1]-r>H) return;
+    ctx.beginPath(); ctx.arc(s[0],s[1], r, 0, Math.PI*2);
+    ctx.lineWidth = lw||1; ctx.strokeStyle = col; ctx.stroke();
+  } else if(e.k==="point"){
+    if(fast) return;
+    const s = w2s(e.x,e.y);
+    ctx.fillStyle = col; ctx.fillRect(s[0]-1.5,s[1]-1.5,3,3);
+  } else if(e.k==="text"){
+    if(fast) return;
+    const px = e.h*view.scale;
+    if(px<6 || px>2000) return;
+    const s = w2s(e.x,e.y);
+    ctx.save();
+    ctx.translate(s[0],s[1]);
+    if(e.rot) ctx.rotate(-d2r(e.rot));
+    ctx.fillStyle = col;
+    ctx.font = px+"px -apple-system,'Noto Sans KR',sans-serif";
+    ctx.textBaseline = e.mtext ? "top" : "alphabetic";
+    const lines = String(e.text).split("\n");
+    for(let li=0; li<lines.length; li++) ctx.fillText(lines[li], 0, li*px*1.25);
+    ctx.restore();
+  }
+}
+
+function draw(){
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.clearRect(0,0,W,H);
+  ctx.lineJoin = "round"; ctx.lineCap = "round";
+  const fast = interacting;
+
+  if(cmp){
+    if(cmp.show.same)    for(const e of cmp.result.same)    drawEnt(e, "rgba(148,167,191,.55)", fast, 1);
+    if(cmp.show.removed) for(const e of cmp.result.removed) drawEnt(e, "#ef4444", fast, 2);
+    if(cmp.show.added)   for(const e of cmp.result.added)   drawEnt(e, "#16a34a", fast, 2);
+    drawOverlay();
+    return;
+  }
+
+  if(!model){ return; }
+  const ents = model.entities;
+  for(let i=0;i<ents.length;i++){
+    const e = ents[i];
+    if(!layerVis[e.layer]) continue;
+    const col = e.color!==undefined ? aciColor(e.color)
+              : aciColor((model.layers[e.layer]||{}).color);
+    drawEnt(e, col, fast, 1);
+  }
+  drawOverlay();
+}
+
+function drawOverlay(){
+  // 측정
+  if(measure.pts.length){
+    ctx.save();
+    ctx.strokeStyle = "#f97316"; ctx.fillStyle = "#f97316"; ctx.lineWidth = 2;
+    ctx.setLineDash(measure.mode==="area" ? [] : [6,4]);
+    ctx.beginPath();
+    measure.pts.forEach((p,idx)=>{ const s=w2s(p[0],p[1]); idx===0?ctx.moveTo(s[0],s[1]):ctx.lineTo(s[0],s[1]); });
+    if(measure.mode==="area" && measure.pts.length>2){ ctx.closePath(); ctx.globalAlpha=.12; ctx.fill(); ctx.globalAlpha=1; }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    measure.pts.forEach(p=>{ const s=w2s(p[0],p[1]); ctx.beginPath(); ctx.arc(s[0],s[1],4,0,Math.PI*2); ctx.fill(); });
+    ctx.restore();
+  }
+  // 마킹
+  for(const m of marks){
+    const s = w2s(m.x, m.y);
+    if(s[0]<-30||s[0]>W+30||s[1]<-30||s[1]>H+30) continue;
+    ctx.save();
+    ctx.fillStyle = "#ef4444"; ctx.strokeStyle="#fff"; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(s[0], s[1], 7, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+    if(m.text){
+      ctx.font = "12px -apple-system,'Noto Sans KR',sans-serif";
+      const t = m.text.length>18 ? m.text.slice(0,18)+"…" : m.text;
+      const w = ctx.measureText(t).width;
+      ctx.fillStyle = "rgba(15,23,42,.9)"; ctx.fillRect(s[0]+10, s[1]-9, w+8, 18);
+      ctx.fillStyle = "#fff"; ctx.textBaseline="middle"; ctx.fillText(t, s[0]+14, s[1]);
+    }
+    ctx.restore();
+  }
+}
+
+// ---------- HUD ----------
+function setHud(html){
+  const el = $("#hud");
+  if(!html){ el.classList.remove("show"); el.innerHTML=""; return; }
+  el.classList.add("show"); el.innerHTML = html;
+}
+function fmt(n){ return Math.abs(n)>=100 ? n.toFixed(1) : n.toFixed(3); }
+function updateMeasureHud(){
+  const p = measure.pts;
+  if(measure.mode==="dist"){
+    if(p.length<2){ setHud("📏 <b>거리</b>\n첫 점을 탭하세요 ("+p.length+"/2)"); return; }
+    const d = Math.hypot(p[1][0]-p[0][0], p[1][1]-p[0][1]);
+    setHud(`📏 <b>거리</b>\n${fmt(d)} 도면단위\n≈ <b>${(d*unitFactor).toFixed(3)} m</b>`);
+  } else if(measure.mode==="area"){
+    if(p.length<3){ setHud("▱ <b>면적</b>\n꼭짓점을 순서대로 탭 ("+p.length+"/3+)\n'측정취소'로 초기화"); return; }
+    let a=0, per=0;
+    for(let i=0;i<p.length;i++){
+      const j=(i+1)%p.length;
+      a += p[i][0]*p[j][1] - p[j][0]*p[i][1];
+      per += Math.hypot(p[j][0]-p[i][0], p[j][1]-p[i][1]);
+    }
+    a = Math.abs(a)/2;
+    const am = a*unitFactor*unitFactor, pm = per*unitFactor;
+    setHud(`▱ <b>면적</b>  (꼭짓점 ${p.length})\n${fmt(a)} 단위²\n≈ <b>${am.toFixed(3)} m²</b>  (${(am/3.305785).toFixed(2)} 평)\n둘레 ≈ ${pm.toFixed(3)} m`);
+  }
+}
+
+// ---------- 상호작용 ----------
+const pointers = new Map();
+let last1 = null, lastMid = null, lastDist = 0, downT = 0, downPos = null, moved = 0;
+
+cv.addEventListener("pointerdown", e=>{
+  cv.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  const r = cv.getBoundingClientRect();
+  if(pointers.size===1){
+    last1 = {x:e.clientX-r.left, y:e.clientY-r.top};
+    downT = performance.now(); downPos = {...last1}; moved = 0;
+    interacting = true;
+  } else if(pointers.size===2){
+    const p = [...pointers.values()];
+    lastMid = { x:(p[0].x+p[1].x)/2 - r.left, y:(p[0].y+p[1].y)/2 - r.top };
+    lastDist = Math.hypot(p[0].x-p[1].x, p[0].y-p[1].y);
+  }
+});
+cv.addEventListener("pointermove", e=>{
+  if(!pointers.has(e.pointerId)) return;
+  pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  const r = cv.getBoundingClientRect();
+  if(pointers.size===1 && last1){
+    const cur = {x:e.clientX-r.left, y:e.clientY-r.top};
+    const dx = cur.x-last1.x, dy = cur.y-last1.y;
+    moved += Math.abs(dx)+Math.abs(dy);
+    view.cx -= dx/view.scale;
+    view.cy += dy/view.scale;
+    last1 = cur;
+    draw();
+  } else if(pointers.size===2){
+    const p = [...pointers.values()];
+    const mid = { x:(p[0].x+p[1].x)/2 - r.left, y:(p[0].y+p[1].y)/2 - r.top };
+    const dist = Math.hypot(p[0].x-p[1].x, p[0].y-p[1].y);
+    if(lastDist>0){
+      const f = dist/lastDist;
+      zoomAbout(mid.x, mid.y, f);
+    }
+    // 두 손가락 이동으로 팬
+    if(lastMid){
+      view.cx -= (mid.x-lastMid.x)/view.scale;
+      view.cy += (mid.y-lastMid.y)/view.scale;
+    }
+    lastMid = mid; lastDist = dist;
+    draw();
+  }
+});
+function endPointer(e){
+  const r = cv.getBoundingClientRect();
+  const wasSingle = pointers.size===1;
+  pointers.delete(e.pointerId);
+  if(pointers.size<2){ lastMid=null; lastDist=0; }
+  if(pointers.size===0){
+    interacting = false;
+    if(wasSingle && performance.now()-downT < 320 && moved < 10 && downPos){
+      handleTap(downPos.x, downPos.y);
+    }
+    draw();
+  }
+  if(pointers.size===1){ const p=[...pointers.entries()][0]; last1 = {x:p[1].x-r.left, y:p[1].y-r.top}; }
+}
+cv.addEventListener("pointerup", endPointer);
+cv.addEventListener("pointercancel", endPointer);
+
+cv.addEventListener("wheel", e=>{
+  e.preventDefault();
+  const r = cv.getBoundingClientRect();
+  const f = Math.exp(-e.deltaY*0.0015);
+  zoomAbout(e.clientX-r.left, e.clientY-r.top, f);
+  draw();
+}, {passive:false});
+
+function zoomAbout(sx, sy, f){
+  f = Math.max(0.2, Math.min(5, f));
+  const before = s2w(sx, sy);
+  view.scale *= f;
+  view.scale = Math.max(1e-9, Math.min(1e12, view.scale));
+  const after = s2w(sx, sy);
+  view.cx += before[0]-after[0];
+  view.cy += before[1]-after[1];
+}
+
+function handleTap(sx, sy){
+  const w = s2w(sx, sy);
+  // 기존 마킹 탭?
+  for(let i=marks.length-1;i>=0;i--){
+    const s = w2s(marks[i].x, marks[i].y);
+    if(Math.hypot(s[0]-sx, s[1]-sy) < 16){
+      editMark(i); return;
+    }
+  }
+  if(tool==="dist"){
+    if(measure.mode!=="dist"){ measure = {pts:[], mode:"dist"}; }
+    if(measure.pts.length>=2) measure.pts = [];
+    measure.pts.push(w);
+    updateMeasureHud(); draw(); return;
+  }
+  if(tool==="area"){
+    if(measure.mode!=="area"){ measure = {pts:[], mode:"area"}; }
+    measure.pts.push(w);
+    updateMeasureHud(); draw(); return;
+  }
+  if(tool==="mark"){
+    const t = prompt("지적사항 / 메모 입력", "");
+    if(t!==null){
+      marks.push({ x:w[0], y:w[1], text:t.trim(), ts:Date.now() });
+      saveMarks(); draw(); renderMarkList();
+    }
+    return;
+  }
+}
+function editMark(i){
+  const m = marks[i];
+  const t = prompt("메모 수정 (빈칸으로 두고 확인 시 삭제)", m.text);
+  if(t===null) return;
+  if(t.trim()===""){ marks.splice(i,1); } else { m.text = t.trim(); }
+  saveMarks(); draw(); renderMarkList();
+}
+
+// ---------- 마킹 저장 ----------
+function saveMarks(){
+  try{ localStorage.setItem("sitecad:marks:"+fileKey, JSON.stringify(marks)); }catch(e){}
+}
+function loadMarks(){
+  try{ marks = JSON.parse(localStorage.getItem("sitecad:marks:"+fileKey) || "[]") || []; }
+  catch(e){ marks = []; }
+}
+function renderMarkList(){
+  const el = $("#markList");
+  if(!marks.length){ el.innerHTML = '<div class="hint">등록된 마킹이 없습니다.</div>'; return; }
+  el.innerHTML = "";
+  marks.forEach((m,i)=>{
+    const row = document.createElement("div"); row.className = "row";
+    const d = new Date(m.ts||Date.now());
+    row.innerHTML = `<div class="mtxt">${(m.text||"(메모 없음)").replace(/</g,"&lt;")}
+      <div class="mts">${d.toLocaleString()}</div></div>`;
+    const go = document.createElement("button"); go.className="btn sm"; go.textContent="이동";
+    go.onclick = ()=>{ view.cx=m.x; view.cy=m.y; closeSheets(); draw(); };
+    const del = document.createElement("button"); del.className="btn sm"; del.textContent="삭제"; del.style.color="var(--danger)";
+    del.onclick = ()=>{ marks.splice(i,1); saveMarks(); draw(); renderMarkList(); };
+    row.appendChild(go); row.appendChild(del);
+    el.appendChild(row);
+  });
+}
+
+// ---------- 레이어 ----------
+function renderLayers(){
+  const el = $("#layerList"); el.innerHTML = "";
+  const names = Object.keys(model.layers).sort((a,b)=>a.localeCompare(b,'ko'));
+  for(const nm of names){
+    const row = document.createElement("div"); row.className = "row";
+    const sw = document.createElement("span"); sw.className = "swatch";
+    const lc = model.layers[nm].color;
+    sw.style.background = (lc===undefined || lc===7 || lc===0 || lc===256) ? "#9aa7bf" : aciColor(lc);
+    const label = document.createElement("span"); label.textContent = nm || "(이름없음)";
+    const box = document.createElement("span"); box.className="sw";
+    const chk = document.createElement("input"); chk.type="checkbox"; chk.checked = !!layerVis[nm];
+    chk.onchange = ()=>{ layerVis[nm] = chk.checked; draw(); };
+    box.appendChild(chk);
+    row.appendChild(sw); row.appendChild(label); row.appendChild(box);
+    el.appendChild(row);
+  }
+}
+
+// ---------- 도면 비교 (개정 전/후 중첩) ----------
+function rt(v, tol){ return Math.round(v/tol); }
+function entSig(e, tol, dx, dy){
+  const X = v => rt(v + (dx||0), tol), Y = v => rt(v + (dy||0), tol);
+  if(e.k==="circle") return "C|"+X(e.cx)+","+Y(e.cy)+"|"+rt(e.r,tol);
+  if(e.k==="point")  return "P|"+X(e.x)+","+Y(e.y);
+  if(e.k==="text")   return "T|"+X(e.x)+","+Y(e.y)+"|"+String(e.text||"").replace(/\s+/g,"").slice(0,40);
+  if(e.k==="poly"){
+    const pts = e.pts.map(p=> X(p[0])+","+Y(p[1]) ).sort();
+    return "L|"+pts.join(";");
+  }
+  return e.k;
+}
+function shiftEnt(e, dx, dy){
+  if(!dx && !dy) return e;
+  const c = Object.assign({}, e);
+  if(e.k==="poly") c.pts = e.pts.map(p=>[p[0]+dx, p[1]+dy]);
+  else if(e.k==="circle"){ c.cx=e.cx+dx; c.cy=e.cy+dy; }
+  else if(e.k==="point"){ c.x=e.x+dx; c.y=e.y+dy; }
+  else if(e.k==="text"){ c.x=e.x+dx; c.y=e.y+dy; }
+  return c;
+}
+function runCompare(){
+  if(!cmpA || !cmpB){ alert("기존 도면(A)과 개정 도면(B)을 모두 지정하세요."); return; }
+  const tol = Math.max(1e-9, parseFloat($("#cmpTol").value) || 1);
+  const dx = parseFloat($("#cmpDx").value) || 0;
+  const dy = parseFloat($("#cmpDy").value) || 0;
+
+  const A = cmpA.model.entities, B = cmpB.model.entities;
+  const cntA = new Map(), cntB = new Map();
+  const sigA = A.map(e=>{ const s = entSig(e, tol, 0, 0); cntA.set(s,(cntA.get(s)||0)+1); return s; });
+  const sigB = B.map(e=>{ const s = entSig(e, tol, dx, dy); cntB.set(s,(cntB.get(s)||0)+1); return s; });
+
+  const same=[], removed=[], added=[];
+  const usedA = new Map();
+  for(let i=0;i<A.length;i++){
+    const s = sigA[i];
+    const cap = Math.min(cntA.get(s)||0, cntB.get(s)||0);
+    const u = usedA.get(s)||0;
+    if(u < cap){ usedA.set(s,u+1); same.push(A[i]); }
+    else removed.push(A[i]);
+  }
+  const usedB = new Map();
+  for(let i=0;i<B.length;i++){
+    const s = sigB[i];
+    const cap = Math.min(cntA.get(s)||0, cntB.get(s)||0);
+    const u = usedB.get(s)||0;
+    if(u < cap){ usedB.set(s,u+1); }
+    else added.push(shiftEnt(B[i], dx, dy));
+  }
+
+  cmp = {
+    tol, dx, dy,
+    show: cmp ? cmp.show : { same:true, removed:true, added:true },
+    result: { same, removed, added }
+  };
+  model = cmpA.model;               // 마킹/좌표 기준은 A 유지
+  measure = {pts:[], mode:null}; setHud("");
+  $("#cmpLegend").classList.add("show");
+  document.body.classList.add("cmpmode");
+  updateCmpLegend();
+  $("#fileName").textContent = "비교: " + cmpA.name + "  ↔  " + cmpB.name;
+  $("#welcome").style.display = "none";
+  closeSheets();
+  resize(); fit();
+}
+function updateCmpLegend(){
+  if(!cmp) return;
+  const r = cmp.result;
+  $("#cmpLegend").innerHTML =
+    `<button class="chip cA${cmp.show.added?"":" off"}" data-k="added">＋ 추가 ${r.added.length}</button>` +
+    `<button class="chip cR${cmp.show.removed?"":" off"}" data-k="removed">－ 삭제 ${r.removed.length}</button>` +
+    `<button class="chip cS${cmp.show.same?"":" off"}" data-k="same">＝ 동일 ${r.same.length}</button>` +
+    `<button class="chip" data-k="menu">⚙</button>` +
+    `<button class="chip" data-k="exit">✕ 종료</button>`;
+  $("#cmpLegend").querySelectorAll(".chip").forEach(b=>{
+    b.onclick = ()=>{
+      const k = b.dataset.k;
+      if(k==="exit"){ exitCompare(); return; }
+      if(k==="menu"){ openCmpSheet(); return; }
+      cmp.show[k] = !cmp.show[k];
+      updateCmpLegend(); draw();
+    };
+  });
+}
+function exitCompare(silent){
+  if(!cmp && !silent) return;
+  cmp = null;
+  $("#cmpLegend").classList.remove("show");
+  document.body.classList.remove("cmpmode");
+  if(!silent){
+    if(cmpA){
+      model = cmpA.model;
+      layerVis = {};
+      for(const nm in model.layers) layerVis[nm] = (model.layers[nm].on !== false);
+      $("#fileName").textContent = cmpA.name + "  ·  객체 " + model.entities.length.toLocaleString();
+    }
+    resize(); fit();
+  }
+}
+function openCmpSheet(){
+  $("#cmpAName").textContent = cmpA ? cmpA.name : "(현재 열린 도면 없음)";
+  $("#cmpBName").textContent = cmpB ? cmpB.name : "(선택 안 됨)";
+  $("#cmpRun").disabled = !(cmpA && cmpB);
+  closeSheets();
+  $("#cmpSheet").classList.add("show");
+}
+
+// ---------- 파일 열기 ----------
+async function readDrawing(file){
+  // returns { dwg:true } | { model } ; throws on parse error
+  const buf = await file.arrayBuffer();
+  const head = new Uint8Array(buf.slice(0, 6));
+  let sig = "";
+  for(const b of head) sig += String.fromCharCode(b);
+  if(/^AC10\d\d/.test(sig) || /^AC1\.|^MC0/.test(sig)) return { dwg:true };
+
+  let text;
+  try{ text = new TextDecoder("utf-8").decode(buf); }
+  catch(e){ text = new TextDecoder("iso-8859-1").decode(buf); }
+  if(!/\bSECTION\b/.test(text) && !/^\s*0\s*[\r\n]+\s*SECTION/m.test(text)){
+    try{
+      const t2 = new TextDecoder("euc-kr").decode(buf);
+      if(/\bSECTION\b/.test(t2)) text = t2;
+    }catch(e){}
+  }
+  return { model: parseDXF(text) };
+}
+
+async function openFile(file){
+  let res;
+  try{ res = await readDrawing(file); }
+  catch(err){ alert("도면 해석 실패: " + err.message); return; }
+  if(res.dwg){ $("#dwgSheet").classList.add("show"); return; }
+  const parsed = res.model;
+
+  fileKey = file.name + ":" + file.size;
+  if(!parsed.entities.length){
+    alert("도면에서 표시할 객체를 찾지 못했습니다.\nDXF 버전이나 인코딩 문제일 수 있습니다.");
+  }
+  exitCompare(true);
+  model = parsed;
+  cmpA = { name:file.name, model:parsed };
+  layerVis = {};
+  for(const nm in model.layers) layerVis[nm] = (model.layers[nm].on !== false);
+  detectUnit();
+  loadMarks(); renderMarkList();
+  measure = {pts:[], mode:null}; setHud("");
+  $("#fileName").textContent = file.name + "  ·  객체 " + model.entities.length.toLocaleString();
+  $("#welcome").style.display = "none";
+  resize(); fit();
+  updateStat();
+}
+
+function detectUnit(){
+  const map = {1:0.0254, 2:0.3048, 4:0.001, 5:0.01, 6:1, 8:0.0000254, 9:0.0254*12/1000};
+  const u = model.header && model.header.insunits;
+  if(u && map[u]){
+    unitFactor = map[u];
+    $("#unitHint").textContent = "INSUNITS 감지: 자동 설정됨. 실측과 다르면 수정하세요.";
+  } else {
+    $("#unitHint").textContent = "단위 정보 없음 → mm(0.001)로 가정. 실측과 다르면 수정하세요.";
+  }
+  $("#unitFactor").value = unitFactor;
+}
+function updateStat(){
+  if(!model){ $("#statInfo").textContent=""; return; }
+  const b = bbox();
+  const cnt = {};
+  model.entities.forEach(e=>{ cnt[e.k]=(cnt[e.k]||0)+1; });
+  let s = `객체 ${model.entities.length.toLocaleString()}  ·  레이어 ${Object.keys(model.layers).length}\n`;
+  s += Object.entries(cnt).map(([k,v])=>`${k}:${v}`).join("  ");
+  if(b) s += `\n도면 범위 ${fmt(b.maxx-b.minx)} × ${fmt(b.maxy-b.miny)} 단위 (≈ ${((b.maxx-b.minx)*unitFactor).toFixed(2)} × ${((b.maxy-b.miny)*unitFactor).toFixed(2)} m)`;
+  $("#statInfo").textContent = s;
+}
+
+// ---------- 예제 도면 ----------
+function loadSample(){
+  const ents = [];
+  const L = (x1,y1,x2,y2,layer,color)=>ents.push({k:"poly",pts:[[x1,y1],[x2,y2]],layer,color});
+  const R = (x,y,w,h,layer)=>{ L(x,y,x+w,y,layer); L(x+w,y,x+w,y+h,layer); L(x+w,y+h,x,y+h,layer); L(x,y+h,x,y,layer); };
+  // 외벽 (mm 단위 가정: 20m x 12m)
+  R(0,0,20000,12000,"A-WALL");
+  // 내벽
+  L(8000,0,8000,7000,"A-WALL");
+  L(8000,7000,20000,7000,"A-WALL");
+  L(0,7000,4000,7000,"A-WALL");
+  L(4000,7000,4000,12000,"A-WALL");
+  // 문 개구부 표시(호)
+  ents.push({k:"poly",pts:sampleArc(8000,0,900,0,90),layer:"A-DOOR",color:3});
+  ents.push({k:"poly",pts:sampleArc(4000,7000,900,180,270),layer:"A-DOOR",color:3});
+  // 기둥
+  [[2000,2000],[10000,2000],[18000,2000],[2000,10000],[18000,10000]].forEach(([x,y])=>{
+    ents.push({k:"poly",pts:[[x-300,y-300],[x+300,y-300],[x+300,y+300],[x-300,y+300]],closed:true,layer:"S-COLS",color:1});
+  });
+  // 설비 원
+  ents.push({k:"circle",cx:14000,cy:9500,r:800,layer:"P-EQPM",color:4});
+  ents.push({k:"circle",cx:14000,cy:9500,r:400,layer:"P-EQPM",color:4});
+  // 치수/문자
+  ents.push({k:"text",x:500,y:12400,h:600,rot:0,text:"현장 예제 평면도 (단위 mm)",layer:"TEXT",color:7});
+  ents.push({k:"text",x:1200,y:3500,h:450,rot:0,text:"사무실",layer:"TEXT",color:7});
+  ents.push({k:"text",x:12000,y:3000,h:450,rot:0,text:"자재창고",layer:"TEXT",color:7});
+  ents.push({k:"text",x:5000,y:9500,h:450,rot:0,text:"휴게실",layer:"TEXT",color:7});
+  ents.push({k:"text",x:13200,y:10600,h:400,rot:0,text:"펌프",layer:"TEXT",color:7});
+  // 치수선
+  L(0,-800,20000,-800,"DIM",8);
+  ents.push({k:"text",x:9000,y:-1600,h:500,rot:0,text:"20000",layer:"DIM",color:8});
+
+  const layers = {};
+  ents.forEach(e=>{ if(!(e.layer in layers)) layers[e.layer]={color:e.color||7,on:true}; });
+  layers["0"]={color:7,on:true};
+
+  exitCompare(true);
+  model = { header:{insunits:4}, layers, entities:ents };
+  cmpA = { name:"예제 평면도", model };
+  layerVis = {}; for(const nm in layers) layerVis[nm]=true;
+  fileKey = "sample";
+  unitFactor = 0.001; $("#unitFactor").value = "0.001";
+  $("#unitHint").textContent = "예제: mm 단위(0.001).";
+  loadMarks(); renderMarkList();
+  measure={pts:[],mode:null}; setHud("");
+  $("#fileName").textContent = "예제 평면도  ·  객체 " + ents.length;
+  $("#welcome").style.display = "none";
+  resize(); fit(); updateStat();
+}
+
+// ---------- 툴 UI ----------
+function setTool(t){
+  tool = t;
+  ["pan","dist","area","mark"].forEach(k=>{
+    const b = document.querySelector(`[data-tool="${k}"]`);
+    if(b) b.classList.toggle("on", k===t);
+  });
+  if(t==="dist"){ measure={pts:[],mode:"dist"}; updateMeasureHud(); }
+  else if(t==="area"){ measure={pts:[],mode:"area"}; updateMeasureHud(); }
+  else { if(tool!=="mark"){} setHud(""); measure={pts:[],mode:null}; }
+  draw();
+}
+document.querySelectorAll("[data-tool]").forEach(b=>{
+  b.addEventListener("click", ()=> setTool(b.dataset.tool));
+});
+$("#tFit").onclick = ()=> fit();
+$("#tClear").onclick = ()=>{ measure={pts:[],mode: (tool==="dist"?"dist":tool==="area"?"area":null)}; if(measure.mode) updateMeasureHud(); else setHud(""); draw(); };
+$("#tLayers").onclick = ()=>{ if(!model || cmp) return; renderLayers(); $("#layerSheet").classList.add("show"); };
+$("#tCompare").onclick = ()=> openCmpSheet();
+
+// 도면 비교 배선
+const ciA = $("#cmpInputA"), ciB = $("#cmpInputB");
+$("#cmpPickA").onclick = ()=> ciA.click();
+$("#cmpPickB").onclick = ()=> ciB.click();
+async function pickInto(slot, file){
+  let res;
+  try{ res = await readDrawing(file); }
+  catch(err){ alert("도면 해석 실패: " + err.message); return; }
+  if(res.dwg){ $("#dwgSheet").classList.add("show"); return; }
+  if(!res.model.entities.length){ alert("표시할 객체가 없는 도면입니다."); return; }
+  if(slot==="A"){ cmpA = { name:file.name, model:res.model }; $("#cmpAName").textContent = file.name; }
+  else { cmpB = { name:file.name, model:res.model }; $("#cmpBName").textContent = file.name; }
+  $("#cmpRun").disabled = !(cmpA && cmpB);
+}
+ciA.addEventListener("change", ()=>{ if(ciA.files[0]) pickInto("A", ciA.files[0]); ciA.value=""; });
+ciB.addEventListener("change", ()=>{ if(ciB.files[0]) pickInto("B", ciB.files[0]); ciB.value=""; });
+$("#cmpRun").onclick = ()=> runCompare();
+
+// 시트 공통
+function closeSheets(){ document.querySelectorAll(".sheet").forEach(s=>s.classList.remove("show")); }
+document.querySelectorAll("[data-close]").forEach(b=> b.addEventListener("click", closeSheets));
+document.querySelectorAll(".sheet").forEach(s=>{
+  s.addEventListener("click", e=>{ if(e.target===s) closeSheets(); });
+});
+
+$("#allLayers").onchange = e=>{
+  const v = e.target.checked;
+  for(const nm in layerVis) layerVis[nm] = v;
+  renderLayers(); draw();
+};
+
+// 메뉴
+$("#menuBtn").onclick = ()=>{ updateStat(); $("#menuSheet").classList.add("show"); };
+$("#applyUnit").onclick = ()=>{
+  const v = parseFloat($("#unitFactor").value);
+  if(v>0){ unitFactor = v; updateMeasureHud(); updateStat(); if(fileKey!=="none"){ try{localStorage.setItem("sitecad:unit:"+fileKey, v);}catch(e){} } }
+};
+$("#cvThemeChk").onchange = e=>{
+  document.documentElement.setAttribute("data-cvtheme", e.target.checked ? "dark" : "light");
+  try{ localStorage.setItem("sitecad:cvtheme", e.target.checked?"dark":"light"); }catch(e){}
+  draw();
+};
+$("#showMarks").onclick = ()=>{ renderMarkList(); closeSheets(); $("#markSheet").classList.add("show"); };
+$("#clearMarks").onclick = ()=>{ if(confirm("이 도면의 마킹을 모두 삭제할까요?")){ marks=[]; saveMarks(); draw(); renderMarkList(); } };
+$("#snap").onclick = ()=>{
+  const a = document.createElement("a");
+  a.href = cv.toDataURL("image/png");
+  a.download = (fileKey.split(":")[0].replace(/\.[^.]+$/,"") || "도면") + "_캡처.png";
+  a.click();
+};
+$("#exportMarks").onclick = ()=>{
+  const blob = new Blob([JSON.stringify({file:fileKey, unitFactor, marks}, null, 2)], {type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = (fileKey.split(":")[0].replace(/\.[^.]+$/,"") || "도면") + "_마킹.json";
+  a.click();
+};
+
+// 파일 입력
+const fi = $("#fileInput");
+$("#openBtn").onclick = ()=> fi.click();
+$("#openBtn2").onclick = ()=> fi.click();
+$("#sampleBtn").onclick = ()=> loadSample();
+fi.addEventListener("change", ()=>{ if(fi.files[0]) openFile(fi.files[0]); fi.value=""; });
+
+// 드래그앤드롭 (PC)
+const stage = $("#stage"), drop = $("#drop");
+["dragenter","dragover"].forEach(ev=> stage.addEventListener(ev, e=>{ e.preventDefault(); drop.style.display="flex"; }));
+["dragleave","drop"].forEach(ev=> stage.addEventListener(ev, e=>{ e.preventDefault(); if(ev==="drop"||e.target===drop) drop.style.display="none"; }));
+stage.addEventListener("drop", e=>{ const f=e.dataTransfer.files[0]; if(f) openFile(f); });
+
+// 저장된 테마
+try{
+  const th = localStorage.getItem("sitecad:cvtheme");
+  if(th==="dark"){ document.documentElement.setAttribute("data-cvtheme","dark"); $("#cvThemeChk").checked = true; }
+}catch(e){}
+
+// A2HS (홈화면 추가) 안내
+let deferredPrompt = null;
+window.addEventListener("beforeinstallprompt", e=>{ e.preventDefault(); deferredPrompt = e; $("#a2hs").classList.add("show"); });
+$("#a2hsInstall").onclick = async ()=>{
+  if(deferredPrompt){ deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt=null; }
+  else alert("브라우저 메뉴 → '홈 화면에 추가'를 선택하세요.");
+  $("#a2hs").classList.remove("show");
+};
+$("#a2hsClose").onclick = ()=>{ $("#a2hs").classList.remove("show"); try{localStorage.setItem("sitecad:a2hs","1");}catch(e){} };
+try{ if(localStorage.getItem("sitecad:a2hs")) $("#a2hs").classList.remove("show"); }catch(e){}
+// iOS 안내 (standalone 아닐 때 1회)
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+const standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone;
+if(isIOS && !standalone){
+  try{ if(!localStorage.getItem("sitecad:a2hs")){
+    $("#a2hs").querySelector("span").textContent = "공유 버튼 → '홈 화면에 추가' 하면 앱처럼 실행됩니다.";
+    $("#a2hsInstall").style.display="none";
+    $("#a2hs").classList.add("show");
+  }}catch(e){}
+}
+
+window.addEventListener("resize", resize);
+window.addEventListener("orientationchange", ()=> setTimeout(resize, 200));
+resize();
+})();
+</script>
+</body>
+</html>

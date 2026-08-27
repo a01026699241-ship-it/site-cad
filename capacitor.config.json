@@ -1,0 +1,11 @@
+{
+  "appId": "site.cad.viewer",
+  "appName": "현장도면",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}
