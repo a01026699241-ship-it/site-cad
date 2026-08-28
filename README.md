@@ -11,6 +11,11 @@
 확대·축소(휠), 이동(드래그), 거리/면적/마킹 툴을 바로 확인할 수 있습니다.
 `.dxf` 파일을 창에 드래그해서 열어볼 수도 있습니다.
 
+> DXF 는 파일을 더블클릭해 열어도 동작합니다.
+> **DWG 는 웹서버(호스팅)나 앱(APK)에서만** 열립니다 — 브라우저가 `file://` 에서는
+> 엔진 모듈 로딩을 막기 때문입니다. 로컬에서 DWG 테스트하려면
+> `npx serve site-cad` 같은 간단한 서버로 열어보세요.
+
 ---
 
 ## 휴대폰에 앱으로 설치하기
@@ -40,25 +45,28 @@
 
 앱에서 **📂 도면 열기** → 파일앱 / 카카오톡 저장함 / 메일 첨부에서 선택.
 
-- **DXF (.dxf)** : 바로 열립니다. 지원 객체 — LINE, LWPOLYLINE/POLYLINE(호 bulge 포함), CIRCLE, ARC, ELLIPSE, SPLINE(근사), TEXT, MTEXT, POINT, 3DFACE/SOLID, LEADER, INSERT(블록 1단계 전개)
-- **DWG (.dwg)** : 아래 참고
+- **DXF (.dxf)** : 즉시 열립니다.
+- **DWG (.dwg)** : **그대로 열립니다.** 앱에 내장된 LibreDWG(WASM) 엔진이
+  내부에서 DXF 로 변환해 표시합니다. 최초 1회는 엔진 로딩으로 10~30초 걸리고,
+  이후에는 빠릅니다.
 
----
+지원 객체 — LINE, LWPOLYLINE/POLYLINE(호 bulge 포함), CIRCLE, ARC, ELLIPSE,
+SPLINE(근사), TEXT, MTEXT, POINT, 3DFACE/SOLID, LEADER, INSERT(블록 1단계 전개)
 
-## DWG 파일은 왜 바로 안 열리나
+### DWG 엔진이 로드되는 순서
+1. 앱에 포함된 `vendor/libredwg/libredwg-web.js` (오프라인 가능)
+2. 없으면 온라인에서 CDN(jsDelivr)의 엔진
+3. 둘 다 안 되면(오프라인 + 미포함) "DXF 로 변환" 안내 표시
 
-DWG는 Autodesk 폐쇄 포맷이라, 어떤 앱이든 DWG를 직접 파싱하려면 상용 CAD 엔진(ODA Drawings SDK 등) 라이선스가 필요합니다. 개인 개발자 기준 연 수천 달러라 현실적으로 탑재가 어렵습니다. (이건 Flutter/네이티브 앱으로 만들어도 동일한 벽입니다.)
+APK/오프라인에서도 DWG 를 열려면 빌드 때 엔진을 포함해야 합니다 →
+`npm run fetch-dwg-engine` (BUILD.md, GitHub Actions 워크플로에는 이미 포함됨).
 
-**해결 — DWG를 DXF로 한 번 변환하면 끝 (약 1분):**
+> **라이선스 주의**: LibreDWG 는 GPL-3.0 입니다. 이 엔진을 포함해 앱을
+> **공개 배포**하면 앱 전체가 GPL-3.0 조건(소스 공개)을 따릅니다.
+> 개인/사내 현장용은 무방. 자세한 내용과 회피법은 [THIRD-PARTY.md](THIRD-PARTY.md).
 
-1. PC에 무료 **ODA File Converter** 설치
-   `opendesign.com` → Guest 로그인 → *ODA File Converter* 다운로드
-2. 실행 → Input folder = DWG 폴더 지정
-3. Output version 아무거나, **Output file type = DXF** 선택 → *Convert*
-4. 만들어진 `.dxf` 를 휴대폰으로 보내 앱에서 열기
-
-AutoCAD가 있으면 *다른 이름으로 저장 → DXF* 로도 됩니다.
-본사/설계에서 도면을 받을 때 아예 DXF도 같이 달라고 하면 이 과정도 생략됩니다.
+DWG 가 안 열릴 때의 확실한 대안: PC에서 무료 **ODA File Converter**(opendesign.com →
+Guest) 로 DXF 변환, 또는 AutoCAD *다른 이름으로 저장 → DXF*.
 
 ---
 
@@ -66,6 +74,7 @@ AutoCAD가 있으면 *다른 이름으로 저장 → DXF* 로도 됩니다.
 
 | 구분 | 내용 |
 |---|---|
+| 파일 | **DWG · DXF 직접 열기** (DWG 는 내장 LibreDWG WASM 엔진이 자동 변환) |
 | 보기 | 손가락 확대/축소/이동, 두 손가락 핀치, 휠 줌, **전체 맞춤** |
 | 레이어 | 목록 표시, 색상 스와치, 개별 ON/OFF, 전체 ON/OFF |
 | 측정 | **거리**(2점), **면적**(다각형, 평 환산·둘레 표시) |
@@ -108,10 +117,10 @@ Capacitor 패키징 세팅을 넣어놨습니다. **자세한 단계는 [BUILD.m
 ## 다음 단계 (로드맵)
 
 1. ~~도면 중첩 비교~~ — ✅ 완료 (툴바 ⇄ 비교)
-2. 비교 결과에서 변경 지점 자동 마킹 → 검측/일보 연계
-3. 검측 체크리스트 · 사진 첨부를 마킹에 연결
-4. 마킹/측정 결과를 일보(일일보고) 양식으로 내보내기
-5. DWG 직접 열기 — LibreDWG(WASM) 연동 검토 (GPL 라이선스 조건 확인 필요)
+2. ~~DWG 직접 열기~~ — ✅ 완료 (LibreDWG WASM 내장, GPL 주의 → THIRD-PARTY.md)
+3. 비교 결과에서 변경 지점 자동 마킹 → 검측/일보 연계
+4. 검측 체크리스트 · 사진 첨부를 마킹에 연결
+5. 마킹/측정 결과를 일보(일일보고) 양식으로 내보내기
 
 ---
 
@@ -124,10 +133,15 @@ site-cad/
 ├─ icon.svg                   ← 앱 아이콘
 ├─ README.md
 ├─ BUILD.md                   ← APK/iOS 빌드 단계별 가이드
+├─ THIRD-PARTY.md             ← LibreDWG(GPL) 라이선스 주의
 ├─ package.json               ← Capacitor 패키징
 ├─ capacitor.config.json
-├─ scripts/                   ← www/ 복사·gradle 실행 헬퍼
-└─ .github/workflows/android.yml  ← push 하면 APK 자동 빌드
+├─ scripts/
+│  ├─ fetch-dwg-engine.mjs    ← DWG 엔진(LibreDWG wasm) 내려받기
+│  ├─ copy-web.mjs            ← www/ 생성
+│  └─ gradle.mjs
+├─ .github/workflows/android.yml  ← push 하면 APK 자동 빌드
+└─ vendor/                    ← (빌드 시 생성) DWG 엔진, .gitignore
 ```
 
 기능 수정은 `index.html` 한 파일만 고치면 됩니다.

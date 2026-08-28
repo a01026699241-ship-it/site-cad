@@ -91,6 +91,15 @@
   .chip.cS{ border-color:#64748b; color:#cbd5e1; }
   body.cmpmode #hud{ top:52px; }
   body.cmpmode #tLayers{ opacity:.4; }
+
+  #busy{ position:absolute; inset:0; z-index:40; display:none; flex-direction:column; gap:14px;
+    align-items:center; justify-content:center; background:rgba(4,10,24,.62); backdrop-filter:blur(2px);
+    color:var(--fg); text-align:center; padding:24px; }
+  #busy.show{ display:flex; }
+  #busy .spin{ width:38px; height:38px; border-radius:50%; border:4px solid #ffffff33;
+    border-top-color:var(--accent); animation:spin 1s linear infinite; }
+  #busy .msg{ font-size:13px; max-width:300px; line-height:1.6; color:var(--muted); }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
 </style>
 </head>
 <body>
@@ -109,7 +118,7 @@
       <div class="big">현장 DWG / DXF 도면 뷰어</div>
       <div class="sub">
         상단 <b>도면 열기</b>로 파일앱 · 카카오톡 · 메일에 받은 도면을 선택하세요.<br>
-        DXF 파일은 바로 열립니다. DWG는 안내에 따라 변환 후 열어주세요.<br>
+        <b>DWG · DXF 모두 그대로 열립니다.</b> (DWG는 최초 1회 엔진 로딩에 몇 초 걸립니다)<br>
         <b>예제</b> 버튼으로 지금 바로 조작을 테스트할 수 있습니다.
       </div>
       <button class="btn primary" id="openBtn2">📂 도면 열기</button>
@@ -136,6 +145,8 @@
     </div>
 
     <div id="drop">도면 파일을 놓으세요</div>
+
+    <div id="busy"><div class="spin"></div><div class="msg">여는 중…</div></div>
   </div>
 </div>
 
@@ -190,20 +201,23 @@
   </div>
 </div>
 
-<!-- DWG 안내 -->
+<!-- DWG 엔진 실패 시 안내 -->
 <div class="sheet" id="dwgSheet">
   <div class="card">
-    <h3>DWG 파일 안내 <button class="btn sm" data-close>닫기</button></h3>
+    <h3>DWG 를 열지 못했습니다 <button class="btn sm" data-close>닫기</button></h3>
+    <div class="hint" id="dwgErr" style="color:var(--danger);white-space:pre-wrap;font-size:11px;max-height:34vh;overflow:auto"></div>
     <div class="hint" style="font-size:13px;line-height:1.9">
-      선택하신 파일은 <b>DWG</b> 형식입니다.<br>
-      DWG는 폐쇄 포맷이라 브라우저에서 직접 열려면 유료 CAD 엔진(ODA 등)이 필요합니다.<br><br>
-      <b>해결 방법 (1분)</b><br>
-      1. PC에서 무료 프로그램 <b>ODA File Converter</b> 설치<br>
-      &nbsp;&nbsp;&nbsp;(opendesign.com → Guest / ODA File Converter)<br>
-      2. 입력=DWG 폴더, 출력 형식 <b>DXF</b> 선택 → 변환<br>
-      3. 변환된 <b>.dxf</b> 파일을 휴대폰으로 보내 이 앱에서 열기<br><br>
-      AutoCAD가 있다면 <b>다른 이름으로 저장 → DXF</b> 로도 됩니다.
+      이 앱은 보통 DWG 를 <b>자동으로</b> 열지만, 지금은 실패했습니다. 흔한 원인:<br>
+      • 오프라인 상태인데 DWG 엔진이 아직 앱에 포함되지 않음<br>
+      &nbsp;&nbsp;→ 온라인에서 한 번 열면 이후 캐시됩니다. 완전 오프라인은
+      <b>vendor/libredwg</b> 를 포함해 빌드하세요 (BUILD.md).<br>
+      • 매우 오래된/손상된 DWG<br><br>
+      <b>대안 — DXF 로 변환 (1분)</b><br>
+      1. PC에 무료 <b>ODA File Converter</b> 설치 (opendesign.com → Guest)<br>
+      2. 출력 형식 <b>DXF</b> 로 변환 → 변환된 .dxf 를 이 앱에서 열기<br>
+      AutoCAD 가 있으면 <b>다른 이름으로 저장 → DXF</b>.
     </div>
+    <button class="btn primary" id="dwgRetry" style="width:100%;margin-top:10px">다시 시도</button>
   </div>
 </div>
 
@@ -238,9 +252,10 @@
   </div>
 </div>
 
-<input type="file" id="fileInput" accept=".dxf,.dwg,application/dxf,image/vnd.dwg" hidden>
-<input type="file" id="cmpInputA" accept=".dxf,application/dxf" hidden>
-<input type="file" id="cmpInputB" accept=".dxf,application/dxf" hidden>
+<!-- accept 를 넓게 둔다: 일부 안드로이드 파일선택기가 .dwg 를 회색 처리해 선택 불가한 문제 회피 -->
+<input type="file" id="fileInput" hidden>
+<input type="file" id="cmpInputA" hidden>
+<input type="file" id="cmpInputB" hidden>
 
 <script>
 (function(){
@@ -716,6 +731,14 @@ function drawOverlay(){
   }
 }
 
+// ---------- 로딩 표시 ----------
+function setBusy(msg){
+  const el = $("#busy");
+  if(!msg){ el.classList.remove("show"); return; }
+  el.querySelector(".msg").textContent = msg;
+  el.classList.add("show");
+}
+
 // ---------- HUD ----------
 function setHud(html){
   const el = $("#hud");
@@ -1015,15 +1038,77 @@ function openCmpSheet(){
   $("#cmpSheet").classList.add("show");
 }
 
-// ---------- 파일 열기 ----------
-async function readDrawing(file){
-  // returns { dwg:true } | { model } ; throws on parse error
-  const buf = await file.arrayBuffer();
-  const head = new Uint8Array(buf.slice(0, 6));
-  let sig = "";
-  for(const b of head) sig += String.fromCharCode(b);
-  if(/^AC10\d\d/.test(sig) || /^AC1\.|^MC0/.test(sig)) return { dwg:true };
+// ---------- DWG 직접 열기 (LibreDWG / WASM) ----------
+// 우선순위: ① jsDelivr CDN(온라인 · 호스팅 시 기본) ② 로컬 번들(vendor · 오프라인 APK)
+// 온라인이면 CDN 이 바로 뜨고, 오프라인이면 CDN 은 건너뛰고 vendor 를 쓴다.
+const DWG_ENGINE_SOURCES = [
+  "https://cdn.jsdelivr.net/npm/@mlightcad/libredwg-web@0.7.3/dist/libredwg-web.js",
+  "https://unpkg.com/@mlightcad/libredwg-web@0.7.3/dist/libredwg-web.js",
+  "./vendor/libredwg/libredwg-web.js"
+];
+let dwgEngine = null;
+async function loadEngineModule(){
+  const isFile = location.protocol === "file:";
+  const online = navigator.onLine !== false;
+  const tried = [];
+  for(const src of DWG_ENGINE_SOURCES){
+    const local = src.startsWith(".") || src.startsWith("/");
+    if(isFile){ tried.push(`${src} → 건너뜀 (file:// 에서는 모듈 로딩 불가)`); continue; }
+    if(!local && !online){ tried.push(`${src} → 건너뜀 (오프라인)`); continue; }
+    try{
+      const m = await import(src);
+      if(m && (m.LibreDwg || (m.default && m.default.LibreDwg))) return m;
+      tried.push(`${src} → 로드됐지만 LibreDwg 없음`);
+    }catch(e){
+      tried.push(`${src} → ${String(e && e.message || e).slice(0,120)}`);
+    }
+  }
+  const hint = isFile
+    ? "브라우저에서 파일을 직접 연 상태(file://)입니다. 웹주소로 접속하거나 APK로 설치해야 DWG가 열립니다."
+    : (!online
+        ? "오프라인 상태이고, 앱에 DWG 엔진(vendor/libredwg)이 아직 포함되지 않았습니다."
+        : "DWG 엔진을 받지 못했습니다. 잠시 후 다시 시도하거나, vendor/libredwg 를 포함해 배포하세요.");
+  const err = new Error(hint + "\n\n[시도 내역]\n" + tried.join("\n"));
+  err.userHint = hint;
+  throw err;
+}
+async function getDwgEngine(){
+  if(dwgEngine) return dwgEngine;
+  const mod = await loadEngineModule();
+  const root = mod.LibreDwg ? mod : (mod.default || mod);
+  if(!root.LibreDwg) throw new Error("DWG 엔진 형식을 인식하지 못했습니다.");
+  dwgEngine = { lib: await root.LibreDwg.create(), FT: root.Dwg_File_Type || {} };
+  return dwgEngine;
+}
+async function dwgToDxfText(buf){
+  const { lib, FT } = await getDwgEngine();
+  const ab = buf instanceof Uint8Array ? buf.buffer : buf;
+  const u8 = new Uint8Array(ab);
+  let out = null, err = null;
 
+  if(typeof lib.dwg_write_dxf === "function"){
+    for(const arg of [ab, u8]){
+      try{ out = lib.dwg_write_dxf(arg); if(out) break; }catch(e){ err = e; }
+    }
+  }
+  // 폴백: read → convert → (엔진 내부 dxf 직렬화가 있으면)
+  if(!out && typeof lib.dwg_read_data === "function"){
+    try{
+      const dwg = lib.dwg_read_data(u8, (FT && FT.DWG) != null ? FT.DWG : 0);
+      if(typeof lib.dwg_to_dxf === "function") out = lib.dwg_to_dxf(dwg);
+      else if(typeof lib.convert === "function" && typeof lib.dwg_write_dxf === "function"){
+        const db = lib.convert(dwg); out = lib.dwg_write_dxf(db);
+      }
+      if(typeof lib.dwg_free === "function"){ try{ lib.dwg_free(dwg); }catch(e){} }
+    }catch(e){ err = e; }
+  }
+
+  if(!out) throw (err || new Error("DWG → DXF 변환 결과가 비어 있습니다."));
+  return typeof out === "string" ? out : new TextDecoder("utf-8").decode(out);
+}
+
+// ---------- 파일 열기 ----------
+function decodeDxf(buf){
   let text;
   try{ text = new TextDecoder("utf-8").decode(buf); }
   catch(e){ text = new TextDecoder("iso-8859-1").decode(buf); }
@@ -1033,15 +1118,43 @@ async function readDrawing(file){
       if(/\bSECTION\b/.test(t2)) text = t2;
     }catch(e){}
   }
-  return { model: parseDXF(text) };
+  return text;
+}
+async function readDrawing(file){
+  // returns { model, fromDwg? } | { dwg:true, err? } ; throws on DXF parse error
+  const buf = await file.arrayBuffer();
+  const head = new Uint8Array(buf.slice(0, 6));
+  let sig = "";
+  for(const b of head) sig += String.fromCharCode(b);
+  const looksDxf = /\bSECTION\b/.test(decodeDxf(buf.slice(0, 512)));
+  const isDwg = /^AC10\d\d/.test(sig) || (/\.dwg$/i.test(file.name) && !looksDxf);
+
+  if(isDwg){
+    setBusy("DWG 변환 중…  최초 1회는 엔진 로딩으로 10~30초 걸릴 수 있어요");
+    try{
+      const dxf = await dwgToDxfText(buf);
+      return { model: parseDXF(dxf), fromDwg:true };
+    }catch(e){
+      return { dwg:true, err: (e && e.message) || String(e) };
+    }
+  }
+  return { model: parseDXF(decodeDxf(buf)) };
 }
 
 async function openFile(file){
+  setBusy(/\.dwg$/i.test(file.name) ? "DWG 여는 중…" : "도면 여는 중…");
   let res;
   try{ res = await readDrawing(file); }
-  catch(err){ alert("도면 해석 실패: " + err.message); return; }
-  if(res.dwg){ $("#dwgSheet").classList.add("show"); return; }
+  catch(err){ setBusy(null); alert("도면 해석 실패: " + err.message); return; }
+  finally{ /* busy는 아래에서 해제 */ }
+  if(res.dwg){
+    setBusy(null);
+    $("#dwgErr").textContent = res.err ? ("오류: " + res.err) : "";
+    $("#dwgSheet").classList.add("show");
+    return;
+  }
   const parsed = res.model;
+  setBusy(null);
 
   fileKey = file.name + ":" + file.size;
   if(!parsed.entities.length){
@@ -1158,10 +1271,12 @@ const ciA = $("#cmpInputA"), ciB = $("#cmpInputB");
 $("#cmpPickA").onclick = ()=> ciA.click();
 $("#cmpPickB").onclick = ()=> ciB.click();
 async function pickInto(slot, file){
+  setBusy(/\.dwg$/i.test(file.name) ? "DWG 여는 중…" : "도면 여는 중…");
   let res;
   try{ res = await readDrawing(file); }
-  catch(err){ alert("도면 해석 실패: " + err.message); return; }
-  if(res.dwg){ $("#dwgSheet").classList.add("show"); return; }
+  catch(err){ setBusy(null); alert("도면 해석 실패: " + err.message); return; }
+  setBusy(null);
+  if(res.dwg){ $("#dwgErr").textContent = res.err ? ("오류: " + res.err) : ""; $("#dwgSheet").classList.add("show"); return; }
   if(!res.model.entities.length){ alert("표시할 객체가 없는 도면입니다."); return; }
   if(slot==="A"){ cmpA = { name:file.name, model:res.model }; $("#cmpAName").textContent = file.name; }
   else { cmpB = { name:file.name, model:res.model }; $("#cmpBName").textContent = file.name; }
@@ -1217,6 +1332,7 @@ $("#openBtn").onclick = ()=> fi.click();
 $("#openBtn2").onclick = ()=> fi.click();
 $("#sampleBtn").onclick = ()=> loadSample();
 fi.addEventListener("change", ()=>{ if(fi.files[0]) openFile(fi.files[0]); fi.value=""; });
+$("#dwgRetry").onclick = ()=>{ closeSheets(); fi.click(); };
 
 // 드래그앤드롭 (PC)
 const stage = $("#stage"), drop = $("#drop");

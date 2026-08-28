@@ -4,10 +4,11 @@
   "private": true,
   "description": "현장 DWG/DXF 도면 뷰어 - Capacitor 패키징",
   "scripts": {
+    "fetch-dwg-engine": "node scripts/fetch-dwg-engine.mjs",
     "copy": "node scripts/copy-web.mjs",
     "add:android": "npm run copy && cap add android",
     "sync": "npm run copy && cap sync",
-    "build:android": "npm run copy && (cap add android || echo android exists) && cap sync android && node scripts/gradle.mjs assembleDebug",
+    "build:android": "npm run fetch-dwg-engine && npm run copy && (cap add android || echo android exists) && cap sync android && node scripts/gradle.mjs assembleDebug",
     "open:android": "cap open android"
   },
   "dependencies": {

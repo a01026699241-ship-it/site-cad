@@ -5,6 +5,9 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
+permissions:
+  contents: write        # 롤링 Release 에 APK 첨부용
+
 jobs:
   build-apk:
     runs-on: ubuntu-latest
@@ -23,6 +26,9 @@ jobs:
       # GitHub 우분투 러너에는 Android SDK 가 미리 설치되어 있음
       - name: Install npm deps
         run: npm install
+
+      - name: Fetch DWG engine (LibreDWG wasm bundle)
+        run: npm run fetch-dwg-engine
 
       - name: Copy web assets -> www/
         run: npm run copy

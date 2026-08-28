@@ -37,16 +37,22 @@
 ```
 cd site-cad
 npm install
-npm run build:android      # www/ 복사 → android/ 생성 → 디버그 APK 빌드
+npm run build:android      # DWG엔진 받기 → www/ 복사 → android/ 생성 → 디버그 APK
 ```
 결과: `site-cad/android/app/build/outputs/apk/debug/app-debug.apk`
 
 Android Studio 에서 열어 빌드/서명하려면:
 ```
+npm run fetch-dwg-engine   # DWG 오프라인 열기용 (약 8.8MB, 1회)
 npm run copy
 npx cap add android
 npm run open:android
 ```
+
+> `npm run fetch-dwg-engine` 를 건너뛰면 APK 는 정상 빌드되지만,
+> **오프라인에서 DWG 열기가 안 됩니다**(온라인이면 CDN 엔진으로 열림).
+> GitHub Actions 워크플로에는 이 단계가 이미 들어 있습니다.
+> LibreDWG 는 GPL-3.0 → 공개 배포 시 THIRD-PARTY.md 참고.
 
 ---
 
