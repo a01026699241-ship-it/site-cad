@@ -1,0 +1,7 @@
+# 저장소 전체 LF 고정 (CI·안드로이드 gradlew·yaml 안정)
+* text=auto eol=lf
+
+# 대용량 번들: 줄바꿈 변환 금지 (wasm base64 손상 방지)
+vendor/libredwg/libredwg-web.js -text
+*.wasm binary
+icon.svg text eol=lf

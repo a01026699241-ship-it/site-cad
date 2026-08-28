@@ -2,7 +2,13 @@ node_modules/
 www/
 android/
 ios/
-vendor/
 *.log
 .DS_Store
 .gradle/
+
+# 개발용 스크래치 (테스트 DWG, 임시 스크립트)
+_*.mjs
+_samples/
+_parser.mjs
+
+# vendor/libredwg/libredwg-web.js 는 커밋함 (오프라인 DWG 열기용, ~8.8MB)

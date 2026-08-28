@@ -1039,12 +1039,12 @@ function openCmpSheet(){
 }
 
 // ---------- DWG 직접 열기 (LibreDWG / WASM) ----------
-// 우선순위: ① jsDelivr CDN(온라인 · 호스팅 시 기본) ② 로컬 번들(vendor · 오프라인 APK)
-// 온라인이면 CDN 이 바로 뜨고, 오프라인이면 CDN 은 건너뛰고 vendor 를 쓴다.
+// ① 앱에 포함된 vendor 번들(오프라인 OK) → ② 실패 시 CDN
+// 실제 DWG(2000/r14/2018)로 dwg_write_dxf → parseDXF 파이프라인 검증됨.
 const DWG_ENGINE_SOURCES = [
+  "./vendor/libredwg/libredwg-web.js",
   "https://cdn.jsdelivr.net/npm/@mlightcad/libredwg-web@0.7.3/dist/libredwg-web.js",
-  "https://unpkg.com/@mlightcad/libredwg-web@0.7.3/dist/libredwg-web.js",
-  "./vendor/libredwg/libredwg-web.js"
+  "https://unpkg.com/@mlightcad/libredwg-web@0.7.3/dist/libredwg-web.js"
 ];
 let dwgEngine = null;
 async function loadEngineModule(){
@@ -1081,29 +1081,16 @@ async function getDwgEngine(){
   return dwgEngine;
 }
 async function dwgToDxfText(buf){
-  const { lib, FT } = await getDwgEngine();
-  const ab = buf instanceof Uint8Array ? buf.buffer : buf;
-  const u8 = new Uint8Array(ab);
+  const { lib } = await getDwgEngine();
+  if(typeof lib.dwg_write_dxf !== "function")
+    throw new Error("DWG 엔진에 dwg_write_dxf 가 없습니다. (엔진 버전 확인 필요)");
+  const ab = buf instanceof Uint8Array ? buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) : buf;
   let out = null, err = null;
-
-  if(typeof lib.dwg_write_dxf === "function"){
-    for(const arg of [ab, u8]){
-      try{ out = lib.dwg_write_dxf(arg); if(out) break; }catch(e){ err = e; }
-    }
+  for(const arg of [ab, new Uint8Array(ab)]){
+    try{ out = lib.dwg_write_dxf(arg); if(out && out.length) break; }
+    catch(e){ err = e; }
   }
-  // 폴백: read → convert → (엔진 내부 dxf 직렬화가 있으면)
-  if(!out && typeof lib.dwg_read_data === "function"){
-    try{
-      const dwg = lib.dwg_read_data(u8, (FT && FT.DWG) != null ? FT.DWG : 0);
-      if(typeof lib.dwg_to_dxf === "function") out = lib.dwg_to_dxf(dwg);
-      else if(typeof lib.convert === "function" && typeof lib.dwg_write_dxf === "function"){
-        const db = lib.convert(dwg); out = lib.dwg_write_dxf(db);
-      }
-      if(typeof lib.dwg_free === "function"){ try{ lib.dwg_free(dwg); }catch(e){} }
-    }catch(e){ err = e; }
-  }
-
-  if(!out) throw (err || new Error("DWG → DXF 변환 결과가 비어 있습니다."));
+  if(!out || !out.length) throw (err || new Error("DWG → DXF 변환 결과가 비어 있습니다. (지원되지 않는 DWG 일 수 있음)"));
   return typeof out === "string" ? out : new TextDecoder("utf-8").decode(out);
 }
 
